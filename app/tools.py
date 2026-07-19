@@ -7,6 +7,7 @@ from __future__ import annotations
 import numpy as np
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
+from scipy import stats
 
 
 def _bootstrap_ci(data: np.ndarray, statistic_fn=np.mean, n_bootstrap: int = 1000,
@@ -71,3 +72,34 @@ def analyze_survival(
         }
 
     return result
+
+
+def compare_samples(sample_a: list[float], sample_b: list[float]) -> dict:
+    """
+    Paired t-test and Wilcoxon signed-rank test, plus a bootstrap CI on the mean
+    difference. Both tests are returned because they can disagree when the data
+    isn't normal.
+    """
+    a, b = np.asarray(sample_a, dtype=float), np.asarray(sample_b, dtype=float)
+    if len(a) != len(b):
+        raise ValueError(
+            f"paired comparison requires equal-length samples, got {len(a)} and {len(b)}"
+        )
+    if len(a) < 2:
+        raise ValueError("need at least 2 paired observations")
+
+    diff = a - b
+    t_stat, t_p = stats.ttest_rel(a, b)
+    w_stat, w_p = stats.wilcoxon(a, b)
+
+    ci_lo, ci_hi = _bootstrap_ci(diff, seed=0)
+
+    return {
+        "mean_a": float(np.mean(a)),
+        "mean_b": float(np.mean(b)),
+        "mean_difference": float(np.mean(diff)),
+        "difference_bootstrap_ci": [ci_lo, ci_hi],
+        "paired_t_test": {"statistic": float(t_stat), "p_value": float(t_p)},
+        "wilcoxon_test": {"statistic": float(w_stat), "p_value": float(w_p)},
+        "significant_at_05": bool(t_p < 0.05),
+    }
