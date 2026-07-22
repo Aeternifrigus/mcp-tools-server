@@ -90,7 +90,11 @@ def compare_samples(sample_a: list[float], sample_b: list[float]) -> dict:
 
     diff = a - b
     t_stat, t_p = stats.ttest_rel(a, b)
-    w_stat, w_p = stats.wilcoxon(a, b)
+    try:
+        w_stat, w_p = stats.wilcoxon(a, b)
+    except ValueError:
+        # wilcoxon raises when every difference is zero
+        w_stat, w_p = 0.0, 1.0
 
     ci_lo, ci_hi = _bootstrap_ci(diff, seed=0)
 
