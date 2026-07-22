@@ -61,3 +61,9 @@ def test_compare_samples_finds_no_difference_for_identical_input():
     result = compare_samples(a, list(a))
     assert result["mean_difference"] == pytest.approx(0.0, abs=1e-9)
     assert result["significant_at_05"] is False
+
+
+def test_compare_samples_handles_all_zero_differences():
+    """Wilcoxon raises on all-zero differences; the comparison should still work."""
+    result = compare_samples([5.0, 5.0, 5.0], [5.0, 5.0, 5.0])
+    assert result["wilcoxon_test"]["p_value"] == 1.0
