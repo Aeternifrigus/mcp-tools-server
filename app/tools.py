@@ -107,3 +107,35 @@ def compare_samples(sample_a: list[float], sample_b: list[float]) -> dict:
         "wilcoxon_test": {"statistic": float(w_stat), "p_value": float(w_p)},
         "significant_at_05": bool(t_p < 0.05),
     }
+
+
+def detect_drift(reference: list[float], current: list[float]) -> dict:
+    """
+    KS test plus Population Stability Index. KS is weak in the tails and PSI
+    depends on binning, so both are reported.
+    """
+    ref, cur = np.asarray(reference, dtype=float), np.asarray(current, dtype=float)
+    if len(ref) < 2 or len(cur) < 2:
+        raise ValueError("need at least 2 observations in each sample")
+
+    ks_stat, ks_p = stats.ks_2samp(ref, cur)
+
+    n_bins = 10
+    edges = np.quantile(ref, np.linspace(0, 1, n_bins + 1))
+    edges[0], edges[-1] = -np.inf, np.inf
+    ref_counts, _ = np.histogram(ref, bins=edges)
+    cur_counts, _ = np.histogram(cur, bins=edges)
+    ref_prop = np.clip(ref_counts / len(ref), 1e-6, None)
+    cur_prop = np.clip(cur_counts / len(cur), 1e-6, None)
+    psi = float(np.sum((cur_prop - ref_prop) * np.log(cur_prop / ref_prop)))
+
+    return {
+        "ks_test": {"statistic": float(ks_stat), "p_value": float(ks_p)},
+        "psi": psi,
+        "psi_interpretation": (
+            "no significant shift" if psi < 0.1 else
+            "moderate shift, monitor" if psi < 0.25 else
+            "significant shift, investigate"
+        ),
+        "drift_detected": bool(ks_p < 0.05 or psi >= 0.25),
+    }
