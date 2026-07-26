@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from app.tools import analyze_survival, compare_samples
+from app.tools import analyze_survival, compare_samples, detect_drift
 
 # ── tools.py ──
 
@@ -67,3 +67,31 @@ def test_compare_samples_handles_all_zero_differences():
     """Wilcoxon raises on all-zero differences; the comparison should still work."""
     result = compare_samples([5.0, 5.0, 5.0], [5.0, 5.0, 5.0])
     assert result["wilcoxon_test"]["p_value"] == 1.0
+
+
+def test_drift_requires_minimum_observations():
+    with pytest.raises(ValueError, match="at least 2"):
+        detect_drift([1], [2])
+
+
+def test_drift_stays_quiet_on_stable_data():
+    rng = np.random.default_rng(3)
+    ref = rng.normal(0, 1, 300).tolist()
+    cur = rng.normal(0, 1, 300).tolist()
+    result = detect_drift(ref, cur)
+    assert result["drift_detected"] is False
+
+
+def test_drift_catches_a_genuine_shift():
+    rng = np.random.default_rng(3)
+    ref = rng.normal(0, 1, 300).tolist()
+    cur = rng.normal(3, 1, 300).tolist()
+    result = detect_drift(ref, cur)
+    assert result["drift_detected"] is True
+    assert result["psi_interpretation"] == "significant shift, investigate"
+
+
+def test_drift_psi_is_zero_for_identical_samples():
+    data = [1.0, 2.0, 3.0, 4.0, 5.0] * 20
+    result = detect_drift(data, list(data))
+    assert result["psi"] == pytest.approx(0.0, abs=1e-9)
