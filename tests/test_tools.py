@@ -95,3 +95,13 @@ def test_drift_psi_is_zero_for_identical_samples():
     data = [1.0, 2.0, 3.0, 4.0, 5.0] * 20
     result = detect_drift(data, list(data))
     assert result["psi"] == pytest.approx(0.0, abs=1e-9)
+
+
+# ── through the MCP server ──
+
+@pytest.mark.asyncio
+async def test_server_registers_all_three_tools():
+    from app.server import server
+    tools = await server.list_tools()
+    names = {t.name for t in tools}
+    assert names == {"survival_analysis", "compare_two_samples", "check_distribution_drift"}
