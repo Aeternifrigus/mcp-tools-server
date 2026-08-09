@@ -105,3 +105,35 @@ async def test_server_registers_all_three_tools():
     tools = await server.list_tools()
     names = {t.name for t in tools}
     assert names == {"survival_analysis", "compare_two_samples", "check_distribution_drift"}
+
+
+@pytest.mark.asyncio
+async def test_call_tool_survival_analysis_returns_structured_content():
+    from app.server import server
+    result = await server.call_tool("survival_analysis", {
+        "durations": [10, 20, 30, 15], "events": [1, 1, 0, 1],
+    })
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert "groups" in result.structured_content
+
+
+@pytest.mark.asyncio
+async def test_call_tool_compare_two_samples_returns_structured_content():
+    from app.server import server
+    result = await server.call_tool("compare_two_samples", {
+        "sample_a": [1.0, 2.0, 3.0], "sample_b": [1.0, 2.0, 2.5],
+    })
+    assert result.is_error is False
+    assert "mean_difference" in result.structured_content
+
+
+@pytest.mark.asyncio
+async def test_call_tool_drift_returns_structured_content():
+    from app.server import server
+    result = await server.call_tool("check_distribution_drift", {
+        "reference": [1.0, 2.0, 3.0, 4.0, 5.0] * 10,
+        "current": [1.0, 2.0, 3.0, 4.0, 5.0] * 10,
+    })
+    assert result.is_error is False
+    assert "drift_detected" in result.structured_content

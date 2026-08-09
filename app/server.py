@@ -4,6 +4,8 @@ MCP server exposing the functions in tools.py.
 Run:      python -m app.server
 Inspect:  npx @modelcontextprotocol/inspector python -m app.server
 """
+from typing import Any
+
 from mcp.server.mcpserver import MCPServer
 
 from app.tools import analyze_survival, compare_samples, detect_drift
@@ -20,7 +22,7 @@ def survival_analysis(
     durations: list[float],
     events: list[int],
     group_labels: list[str] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Fit a Kaplan-Meier survival curve and, if exactly two groups are given
     (e.g. two carriers, two treatment arms), run a log-rank significance
@@ -37,7 +39,7 @@ def survival_analysis(
 
 
 @server.tool()
-def compare_two_samples(sample_a: list[float], sample_b: list[float]) -> dict:
+def compare_two_samples(sample_a: list[float], sample_b: list[float]) -> dict[str, Any]:
     """
     Compare two paired samples (e.g. a new model's per-case scores vs a
     baseline's, on the same cases) with a paired t-test and a Wilcoxon
@@ -52,7 +54,7 @@ def compare_two_samples(sample_a: list[float], sample_b: list[float]) -> dict:
 
 
 @server.tool()
-def check_distribution_drift(reference: list[float], current: list[float]) -> dict:
+def check_distribution_drift(reference: list[float], current: list[float]) -> dict[str, Any]:
     """
     Check whether a current sample has drifted from a reference sample,
     using both a Kolmogorov-Smirnov test and the Population Stability Index.
