@@ -137,3 +137,21 @@ async def test_call_tool_drift_returns_structured_content():
     })
     assert result.is_error is False
     assert "drift_detected" in result.structured_content
+
+
+@pytest.mark.asyncio
+async def test_call_tool_with_invalid_arguments_raises_tool_error_not_a_crash():
+    """call_tool raises ToolError for bad input; it must not be an UnexpectedToolError."""
+    from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+
+    from app.server import server
+
+    with pytest.raises(ToolError) as exc_info:
+        await server.call_tool("compare_two_samples", {
+            "sample_a": [1, 2, 3], "sample_b": [1, 2],  # mismatched lengths
+        })
+
+    assert not isinstance(exc_info.value, UnexpectedToolError), (
+        "an anticipated validation error must not be classified as a crash"
+    )
+    assert "equal-length" in str(exc_info.value)
