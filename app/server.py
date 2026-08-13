@@ -4,9 +4,11 @@ MCP server exposing the functions in tools.py.
 Run:      python -m app.server
 Inspect:  npx @modelcontextprotocol/inspector python -m app.server
 """
+from functools import wraps
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from app.tools import analyze_survival, compare_samples, detect_drift
 
@@ -17,7 +19,22 @@ server = MCPServer(
 )
 
 
+def _anticipated_errors_as_tool_errors(fn):
+    """
+    Turn ValueError into ToolError. The SDK treats any other exception as a crash
+    and hides the message from the client.
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+    return wrapper
+
+
 @server.tool()
+@_anticipated_errors_as_tool_errors
 def survival_analysis(
     durations: list[float],
     events: list[int],
@@ -39,6 +56,7 @@ def survival_analysis(
 
 
 @server.tool()
+@_anticipated_errors_as_tool_errors
 def compare_two_samples(sample_a: list[float], sample_b: list[float]) -> dict[str, Any]:
     """
     Compare two paired samples (e.g. a new model's per-case scores vs a
@@ -54,6 +72,7 @@ def compare_two_samples(sample_a: list[float], sample_b: list[float]) -> dict[st
 
 
 @server.tool()
+@_anticipated_errors_as_tool_errors
 def check_distribution_drift(reference: list[float], current: list[float]) -> dict[str, Any]:
     """
     Check whether a current sample has drifted from a reference sample,
