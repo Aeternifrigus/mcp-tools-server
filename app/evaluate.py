@@ -1,8 +1,9 @@
 """
-Evaluation for the MCP tools: quality and latency.
+Evaluation for the MCP tools: quality, latency and cost.
 
 Quality uses inputs with a known answer. Latency is timed through
-server.call_tool, so protocol overhead is included.
+server.call_tool, so protocol overhead is included. Cost is an estimate from
+latency and an assumed compute rate, since the tools run locally.
 """
 from __future__ import annotations
 
@@ -12,6 +13,9 @@ import time
 from dataclasses import dataclass, field
 
 from app.server import server
+
+# Assumed rate for the cost estimate, not a real price.
+ILLUSTRATIVE_COMPUTE_RATE_USD_PER_VCPU_HOUR = 0.05
 
 
 @dataclass
@@ -43,6 +47,15 @@ class EvalReport:
             return 0.0
         return sum(c.passed for c in self.quality_checks) / len(self.quality_checks)
 
+    def estimated_cost_usd(self, calls_per_day: int) -> dict[str, float]:
+        """Monthly compute cost per tool from mean latency and a daily call volume."""
+        out = {}
+        for lat in self.latency:
+            vcpu_hours_per_month = (lat.mean_ms / 1000 / 3600) * calls_per_day * 30
+            out[lat.tool_name] = round(
+                vcpu_hours_per_month * ILLUSTRATIVE_COMPUTE_RATE_USD_PER_VCPU_HOUR, 4
+            )
+        return out
 
 
 # ── quality: inputs with a known answer ──
@@ -135,7 +148,7 @@ async def measure_latency(tool_name: str, arguments: dict, n_calls: int = 50) ->
     )
 
 
-async def run_full_evaluation() -> EvalReport:
+async def run_full_evaluation(calls_per_day: int = 1000) -> EvalReport:
     report = EvalReport()
     report.quality_checks = await run_quality_checks()
 
@@ -159,7 +172,7 @@ async def run_full_evaluation() -> EvalReport:
     return report
 
 
-def print_report(report: EvalReport) -> None:
+def print_report(report: EvalReport, calls_per_day: int = 1000) -> None:
     print("=" * 62)
     print(f"QUALITY  ({report.quality_pass_rate:.0%} passed)")
     print("=" * 62)
@@ -174,6 +187,14 @@ def print_report(report: EvalReport) -> None:
     for lat in report.latency:
         print(f"  {lat.tool_name:26s} mean={lat.mean_ms:6.2f}ms  "
               f"p50={lat.p50_ms:6.2f}ms  p95={lat.p95_ms:6.2f}ms  p99={lat.p99_ms:6.2f}ms")
+
+    print()
+    print("=" * 62)
+    print(f"COST  (estimate at {calls_per_day}/day, "
+          f"${ILLUSTRATIVE_COMPUTE_RATE_USD_PER_VCPU_HOUR}/vCPU-hour assumed)")
+    print("=" * 62)
+    for tool_name, cost in report.estimated_cost_usd(calls_per_day).items():
+        print(f"  {tool_name:26s} ~${cost:.4f}/month in compute time")
 
 
 if __name__ == "__main__":
