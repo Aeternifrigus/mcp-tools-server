@@ -20,6 +20,47 @@ def _bootstrap_ci(data: np.ndarray, statistic_fn=np.mean, n_bootstrap: int = 100
     return float(lo), float(hi)
 
 
+def _km_median(durations: np.ndarray, events: np.ndarray) -> float:
+    """Kaplan-Meier median: the first time the survival estimate reaches 0.5.
+
+    Returns inf when the curve never gets that low (median not reached),
+    matching lifelines' median_survival_time_.
+    """
+    times = np.unique(durations[events == 1])
+    if times.size == 0:
+        return float("inf")
+    at_risk = (durations[None, :] >= times[:, None]).sum(axis=1)
+    deaths = ((durations[None, :] == times[:, None]) & (events[None, :] == 1)).sum(axis=1)
+    survival = np.cumprod(1.0 - deaths / at_risk)
+    reached = np.nonzero(survival <= 0.5)[0]
+    return float(times[reached[0]]) if reached.size else float("inf")
+
+
+def _bootstrap_median_survival_ci(
+    durations: np.ndarray, events: np.ndarray, n_bootstrap: int = 1000,
+    confidence: float = 0.95, seed: int = 0,
+) -> list[float] | None:
+    """Percentile CI on the Kaplan-Meier median, refitting the curve on each
+    resample so censored observations are handled the same way as in the
+    point estimate.
+
+    Returns None when the median is not reached in too many resamples for an
+    interval to mean anything.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(durations)
+    medians = np.empty(n_bootstrap)
+    for i in range(n_bootstrap):
+        idx = rng.integers(0, n, size=n)
+        medians[i] = _km_median(durations[idx], events[idx])
+    finite = medians[np.isfinite(medians)]
+    if finite.size < 0.9 * n_bootstrap:
+        return None
+    alpha = 1 - confidence
+    lo, hi = np.percentile(finite, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return [float(lo), float(hi)]
+
+
 def analyze_survival(
     durations: list[float],
     events: list[int],
@@ -47,15 +88,18 @@ def analyze_survival(
         kmf = KaplanMeierFitter()
         kmf.fit(durations_arr[mask], event_observed=events_arr[mask])
         median = kmf.median_survival_time_
-        if mask.sum() > 1:
-            ci_lo, ci_hi = _bootstrap_ci(durations_arr[mask], seed=0)
+        if mask.sum() > 1 and np.isfinite(median):
+            median_ci = _bootstrap_median_survival_ci(
+                durations_arr[mask], events_arr[mask], seed=0
+            )
         else:
-            ci_lo, ci_hi = float("nan"), float("nan")
+            median_ci = None
         result["groups"][str(g)] = {
             "n": int(mask.sum()),
             "n_events": int(events_arr[mask].sum()),
             "median_survival": float(median) if np.isfinite(median) else None,
-            "median_bootstrap_ci": [ci_lo, ci_hi],
+            # None when the median is not reached or cannot be bootstrapped.
+            "median_bootstrap_ci": median_ci,
         }
 
     unique_groups = list(np.unique(groups))
