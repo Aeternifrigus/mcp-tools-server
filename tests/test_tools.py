@@ -35,6 +35,46 @@ def test_survival_stays_quiet_on_identical_groups():
     assert result["logrank_test"]["significant_at_05"] is False
 
 
+def _censored_sample(seed: int, n: int = 400):
+    """Exponential delivery times (true median 20 ln 2 = 13.86) under heavy
+    censoring, so ignoring the censoring gives a badly wrong answer."""
+    rng = np.random.default_rng(seed)
+    t = rng.exponential(20, n)
+    c = rng.uniform(0, 30, n)
+    return np.minimum(t, c).tolist(), (t <= c).astype(int).tolist()
+
+
+def test_km_median_matches_lifelines():
+    from lifelines import KaplanMeierFitter
+
+    from app.tools import _km_median
+
+    for seed in range(5):
+        d, e = _censored_sample(seed, n=150)
+        kmf = KaplanMeierFitter().fit(d, event_observed=e)
+        assert _km_median(np.array(d), np.array(e)) == pytest.approx(
+            kmf.median_survival_time_
+        )
+
+
+def test_median_ci_brackets_the_median_under_censoring():
+    """Regression: the CI used to be a bootstrap of the mean raw duration,
+    which ignored censoring and did not even contain the median."""
+    d, e = _censored_sample(1)
+    group = analyze_survival(d, e)["groups"]["all"]
+    lo, hi = group["median_bootstrap_ci"]
+    assert lo <= group["median_survival"] <= hi
+    assert lo < 20 * np.log(2) < hi
+
+
+def test_median_ci_is_none_when_median_not_reached():
+    # Almost everything censored early: survival never drops to 0.5.
+    result = analyze_survival([1, 2, 3, 4, 5, 6, 7, 8], [1, 0, 0, 0, 0, 0, 0, 0])
+    group = result["groups"]["all"]
+    assert group["median_survival"] is None
+    assert group["median_bootstrap_ci"] is None
+
+
 def test_compare_samples_rejects_mismatched_lengths():
     with pytest.raises(ValueError, match="equal-length"):
         compare_samples([1, 2, 3], [1, 2])
